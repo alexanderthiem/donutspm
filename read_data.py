@@ -121,6 +121,6 @@ def query_transactions():
 
 
 print_table_sizes()
-analys_storage_potential()
+# analys_storage_potential()
 # Close the connection
 conn.close()
