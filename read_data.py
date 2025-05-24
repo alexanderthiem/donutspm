@@ -22,7 +22,7 @@ def format_price(price):
 
 
 def print_table_sizes():
-    for table_name in ["seller", "transactions", "item_map"]:
+    for table_name in ["seller", "transactions", "item_map", "offers"]:
         cur.execute(f"SELECT COUNT(*) FROM {table_name}")
         row_count = cur.fetchone()[0]
         print(table_name, row_count)

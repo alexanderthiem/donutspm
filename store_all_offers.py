@@ -39,23 +39,46 @@ CREATE TABLE IF NOT EXISTS transactions (
     FOREIGN KEY (item_id) REFERENCES item_map(id)
 )
 ''')
+
+cur.execute('''
+CREATE TABLE IF NOT EXISTS offers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    price INTEGER,
+    time_left INTEGER,
+    ends_at_min INTEGER,
+    ends_at_max INTEGER,
+    seller_id INTEGER,
+    item_id INTEGER,
+    FOREIGN KEY (seller_id) REFERENCES seller(id),
+    FOREIGN KEY (item_id) REFERENCES item_map(id)
+)
+''')
+
 print("starting main loop")
 uuid_to_id = {}
 item_key_to_id = {}
 item_keys = {}
+old_offers = []
 loop = 0
 while True:
     loop += 1
     now = time.time()
-    count, cache = api_wrapper.update_transaction_cache()
-    if count == 0:
+    newoffers = api_wrapper.find_new_offers("", old_offers)
+    if not newoffers:
         time.sleep(1/250 * 10)
+        continue
+    old_offers.extend(newoffers)
+    old_offers = sorted(
+        old_offers, key=lambda x: x["ends_at_min"], reverse=True)[:100]
+    count = len(newoffers)
+
+    if count == 0:
         continue
     if loop < 10 or loop % 10000 == 0 or loop in [10, 100, 1000] or count > 40:
         print(
-            f"Processing {count} new transactions...at {now:.4f} seconds, fetching took {time.time()-now:.4f} seconds")
+            f"Processing {count} new offers...at {now:.4f} seconds, fetching took {time.time()-now:.4f} seconds")
     for i in range(count):
-        data = cache[i]
+        data = newoffers[i]
         if data["seller"]["uuid"] in uuid_to_id:
             continue
         cur.execute('''
@@ -65,7 +88,7 @@ while True:
     conn.commit()
 
     for i in range(count):
-        data = cache[i]
+        data = newoffers[i]
         # Get seller ID
         if data["seller"]["uuid"] in uuid_to_id:
             continue
@@ -75,7 +98,7 @@ while True:
         uuid_to_id[data["seller"]["uuid"]] = seller_id
 
     for i in range(count):
-        data = cache[i]
+        data = newoffers[i]
         # --- Insert item
         item = data["item"]
         lore = json.dumps(item.get("lore"))
@@ -102,7 +125,7 @@ while True:
     conn.commit()
 
     for i in range(count):
-        data = cache[i]
+        data = newoffers[i]
         # Get item ID
         if item_keys[i] in item_key_to_id:
             continue
@@ -115,17 +138,16 @@ while True:
         item_key_to_id[item_keys[i]] = item_id
 
     for i in range(count):
-        data = cache[i]
+        data = newoffers[i]
         # --- Insert transaction
         cur.execute('''
-        INSERT OR REPLACE INTO transactions ( price, time, seller_id, item_id)
-        VALUES ( ?, ?, ?, ?)
-        ''', (data["price"], data["unixMillisDateSold"], uuid_to_id[data["seller"]["uuid"]], item_key_to_id[item_keys[i]]))
+        INSERT OR REPLACE INTO offers ( price, time_left, seller_id, item_id, ends_at_min,ends_at_max)
+        VALUES (?,? ,?, ?, ?, ?)
+        ''', (data["price"], data["time_left"], uuid_to_id[data["seller"]["uuid"]], item_key_to_id[item_keys[i]], data["ends_at_min"], data["ends_at_max"]))
     conn.commit()
 
     if loop < 10 or loop % 10000 == 0 or loop in [10, 100, 1000] or count > 40:
         print(
-            f"Loop {loop} completed in {time.time()-now:.4f} seconds, inserted {count} transactions.")
-
+            f"Loop {loop} completed in {time.time()-now:.4f} seconds, inserted {count} offers.")
 
 conn.close()
