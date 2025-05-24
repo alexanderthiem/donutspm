@@ -1,2 +1,5 @@
 __pycache__/
 all_transactions.db
+all_transactions.db-journal
+collect_transaction.log
+donutspm/
