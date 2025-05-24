@@ -1,3 +1,4 @@
+import itertools
 import sqlite3
 import json
 
@@ -23,9 +24,39 @@ def format_price(price):
 
 def print_table_sizes():
     for table_name in ["seller", "transactions", "item_map", "offers"]:
+
         cur.execute(f"SELECT COUNT(*) FROM {table_name}")
         row_count = cur.fetchone()[0]
         print(table_name, row_count)
+
+        cur.execute(f"PRAGMA table_info({table_name})")
+        columns = cur.fetchall()  # Each row: (cid, name, type, notnull, dflt_value, pk)
+        for col in columns:
+            print(f"  {col[1]} - {col[2]}")
+        print()
+
+
+def analys_storage_potential():
+    for groups in [["i.id", "s.id", "t.price"], ["i.id", "s.id"], ["i.id", "t.price"], ["i.id"], ["s.id"], ["t.price"]]:
+        print(f"Grouping By {', '.join(groups)}")
+        cur.execute(f'''
+            SELECT
+                COUNT(*), i.id , s.id, t.price
+            FROM transactions t
+            JOIN seller s ON t.seller_id = s.id
+            JOIN item_map i ON t.item_id = i.id
+            Group By {', '.join(groups)}
+            ORDER BY COUNT(*) DESC
+        ''')
+
+        rows = cur.fetchall()
+        a = sum(map(lambda x: x[0], rows[:255]))
+        print(f"Potential storage for top 255 combos: {a}")
+        a = sum(map(lambda x: x[0], rows[:65535]))
+        print(f"Potential storage for top 65535 combos: {a}")
+        a = sum(map(lambda x: x[0], rows))
+        print(f"Potential storage for all: {a}")
+        print()
 
 
 def query_transactions():
@@ -88,5 +119,6 @@ def query_transactions():
 
 
 print_table_sizes()
+analys_storage_potential()
 # Close the connection
 conn.close()
