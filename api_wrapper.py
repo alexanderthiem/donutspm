@@ -93,6 +93,11 @@ def raw_api_request(kind, search, sort_by, page=1, depth=5):
         res["data"] = data
         return res
     else:
+        if response.status_code == 429:  # Too Many Requests
+            print(
+                f"Rate limit exceeded, sleeping for {2**(5-depth)} intervalls {2**(5-depth)*60/250} seconds")
+            # Sleep for 2**(5-depth) intervals
+            time.sleep(2 * 60 * (1/250) * (2**(5-depth)))
 
         if depth > 0:
             return raw_api_request(kind, search, sort_by, page, depth-1)
@@ -123,6 +128,7 @@ def request_api_filtered(kind, search, sort_by, page=1, apply_filter=True):
 
 
 def get_all_pages(kind, search, sort_by, apply_filter=True):
+    # TODO, parralelise this
     page = 1
     all_data = []
     now = time.time()
@@ -136,7 +142,7 @@ def get_all_pages(kind, search, sort_by, apply_filter=True):
         if response["last_page"]:
             break
         page += 1
-    to_sleep = 1/250*page - (time.time()-now)
+    to_sleep = 60/250*page - (time.time()-now)
     if to_sleep > 0:
         time.sleep(to_sleep)  # Rate limit
 
@@ -163,10 +169,10 @@ def update_transaction_cache():
         transactions_last_fetched = update_transaction_cache.transaction_cache[
             0]["unixMillisDateSold"]
     else:
-        print("Hmmm, empty but existent transaction cache???")
+        print("Hmmm, empty (existent) transaction cache???")
         transactions_last_fetched = 0
 
-    if ((time.time()*1000) - transactions_last_fetched) < (1000/250 * 10):
+    if ((time.time()*1000) - transactions_last_fetched) < (1000/250 * 60):
         return 0, update_transaction_cache.transaction_cache
 
     page = 1
@@ -189,7 +195,7 @@ def update_transaction_cache():
     all_data.extend(
         update_transaction_cache.transaction_cache[:10000-len(all_data)])
     update_transaction_cache.transaction_cache = all_data
-    to_sleep = 1/250*page - (time.time()-now)
+    to_sleep = 60/250*page - (time.time()-now)
     if to_sleep > 0:
         time.sleep(to_sleep)  # Rate limit
     return new_len, update_transaction_cache.transaction_cache
