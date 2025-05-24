@@ -1,4 +1,7 @@
-from collections import defaultdict
+import threading
+import asyncio
+import aiohttp
+from collections import defaultdict, deque
 import json
 from collections import Counter
 import bisect
@@ -47,6 +50,112 @@ last_listed = "last_listed"
 offers_link = "v1/auction/list/"
 transactions_link = "v1/auction/transactions/"
 # Option 1: API key in headers
+
+offers_buffers = {}
+
+
+def get_offers_buffer(kind, search, sort_by):
+    key = (kind, search, sort_by)
+    if key not in offers_buffers:
+        offers_buffers[key] = deque()
+    return offers_buffers[key]
+
+
+async def async_raw_api_request(session, kind, search, sort_by, page=1, depth=5):
+    if not hasattr(async_raw_api_request, "request_id"):
+        async_raw_api_request.request_id = 0
+    async_raw_api_request.request_id += 1
+
+    if kind == transactions_link and search != "":
+        print("transactions don't support searching")
+    if kind == transactions_link and sort_by != recently_listed:
+        print("transactions don't support other sorts than recently_listed")
+
+    res = {}
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "search": search,
+        "sort": sort_by,
+    }
+    url = f"{api_url}{kind}{page}"
+    time_before_request = time.time() * 1000
+
+    try:
+        async with session.get(url, headers=headers, json=payload) as response:
+            time_after_request = time.time() * 1000
+            res["status_code"] = response.status
+            res["last_page"] = False
+
+            if response.status == 200:
+                # print(await response.text())
+                text = await response.text()  # its json, but not flagged as json
+                data = json.loads(text)
+                data = data["result"]
+                if data and data[-1] is None:
+                    res["last_page"] = True
+                data = list(filter(lambda x: x is not None, data))
+
+                for d in data:
+                    d["request_id"] = async_raw_api_request.request_id
+                    if kind == offers_link:
+                        d["ends_at_min"] = d["time_left"] + time_before_request
+                        d["ends_at_max"] = d["time_left"] + time_after_request
+                res["data"] = data
+                print(time_after_request - time_before_request)
+                return res
+            else:
+                if response.status == 429:
+                    print(
+                        f"Rate limit exceeded, sleeping for {2**(5-depth)} intervals ({2**(5-depth)*60/250:.2f} seconds)"
+                    )
+                    await asyncio.sleep(2 * 60 * (1 / 250) * (2 ** (5 - depth)))
+
+                if depth > 0:
+                    return await async_raw_api_request(session, kind, search, sort_by, page, depth - 1)
+
+                print(
+                    f"Requested {kind} for {search} with sort {sort_by} and page {page}")
+                print(f"Error: {response.status} - {await response.text()}")
+                return res
+    except aiohttp.ClientError as e:
+        print(f"Client error: {e}")
+        return res
+
+
+async def scheduled_fetch(kind, search, sort_by, interval=0.5):
+    async with aiohttp.ClientSession() as session:
+        async def fetch_loop():
+            while True:
+                asyncio.create_task(fetch_and_store(
+                    session, kind, search, sort_by))
+                await asyncio.sleep(interval)
+
+        async def fetch_and_store(session, kind, search, sort_by):
+            result = await async_raw_api_request(session, kind, search, sort_by)
+            if "data" in result:
+                get_offers_buffer(kind, search, sort_by).extend(result["data"])
+
+        await fetch_loop()
+
+
+def start_scheduled_fetch_in_background(kind, search, sort_by, interval=0.5):
+    def run_loop():
+        asyncio.run(scheduled_fetch(kind, search, sort_by, interval))
+
+    thread = threading.Thread(target=run_loop, daemon=True)
+    thread.start()
+
+
+def simulate_api_call(kind, search, sort_by):
+    buffer = get_offers_buffer(kind, search, sort_by)
+    new_offers = []
+    while buffer:
+        new_offers.append(buffer.popleft())
+    return new_offers
 
 
 def raw_api_request(kind, search, sort_by, page=1, depth=5):
@@ -118,13 +227,23 @@ def apply_filter_now(search, data):
         print(f"Error, not a valid filter: {search}")
 
 
-def request_api_filtered(kind, search, sort_by, page=1, apply_filter=True):
-    response = raw_api_request(kind, search, sort_by, page)
-    if response["status_code"] == 200:
+def request_api_filtered(kind, search, sort_by, page=1, apply_filter=True, use_buffer=False):
+    if use_buffer:
+        # Just get offers from the buffer for this key
+        buffer = get_offers_buffer(kind, search, sort_by)
+        new_offers = []
+        while buffer:
+            new_offers.append(buffer.popleft())
         if apply_filter:
-            response["data"] = apply_filter_now(search, response["data"])
-        return response
-    return False
+            new_offers = apply_filter_now(search, new_offers)
+        return {"status_code": 200, "data": new_offers, "last_page": False}
+    else:
+        response = raw_api_request(kind, search, sort_by, page)
+        if response["status_code"] == 200:
+            if apply_filter:
+                response["data"] = apply_filter_now(search, response["data"])
+            return response
+        return False
 
 
 def get_all_pages(kind, search, sort_by, apply_filter=True):
@@ -237,7 +356,7 @@ def find_new_offers(search, old_offers):
     old_offers = sorted(
         old_offers, key=lambda x: x["ends_at_min"], reverse=True)[:40]
     new_offers = request_api_filtered(offers_link, search, recently_listed,
-                                      page=1, apply_filter=False)["data"]
+                                      page=1, apply_filter=False, use_buffer=True)["data"]
     matches = set()
     strength = {}
     for a, old_offer_a in enumerate(old_offers):

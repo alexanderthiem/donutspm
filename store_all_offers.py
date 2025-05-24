@@ -53,7 +53,9 @@ CREATE TABLE IF NOT EXISTS offers (
     FOREIGN KEY (item_id) REFERENCES item_map(id)
 )
 ''')
-
+print("Starting fetching and storing offers...")
+api_wrapper.start_scheduled_fetch_in_background(
+    api_wrapper.offers_link, "", api_wrapper.recently_listed, 0.5)
 print("starting main loop")
 uuid_to_id = {}
 item_key_to_id = {}
@@ -65,6 +67,7 @@ while True:
     now = time.time()
     newoffers = api_wrapper.find_new_offers("", old_offers)
     if not newoffers:
+        loop -= 1
         time.sleep(1/250 * 10)
         continue
     old_offers.extend(newoffers)
