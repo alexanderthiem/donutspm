@@ -157,7 +157,7 @@ def simulate_api_call(kind, search, sort_by):
     new_offers = []
     if buffer:
         new_offers.extend(buffer.popleft())
-    return new_offers
+    return {"status_code": 200, "data": new_offers, "last_page": False}
 
 
 def raw_api_request(kind, search, sort_by, page=1, depth=5):
@@ -231,21 +231,14 @@ def apply_filter_now(search, data):
 
 def request_api_filtered(kind, search, sort_by, page=1, apply_filter=True, use_buffer=False):
     if use_buffer:
-        # Just get offers from the buffer for this key
-        buffer = get_offers_buffer(kind, search, sort_by)
-        new_offers = []
-        while buffer:
-            new_offers.append(buffer.popleft())
-        if apply_filter:
-            new_offers = apply_filter_now(search, new_offers)
-        return {"status_code": 200, "data": new_offers, "last_page": False}
+        response = simulate_api_call(kind, search, sort_by)
     else:
         response = raw_api_request(kind, search, sort_by, page)
-        if response["status_code"] == 200:
-            if apply_filter:
-                response["data"] = apply_filter_now(search, response["data"])
-            return response
-        return False
+    if response["status_code"] == 200:
+        if apply_filter:
+            response["data"] = apply_filter_now(search, response["data"])
+        return response
+    return False
 
 
 def get_all_pages(kind, search, sort_by, apply_filter=True):
