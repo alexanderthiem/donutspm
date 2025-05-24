@@ -49,6 +49,7 @@ while True:
     now = time.time()
     count, cache = api_wrapper.update_transaction_cache()
     if count == 0:
+        loop -= 1
         time.sleep(1/250 * 10)
         continue
     if loop < 10 or loop % 10000 == 0 or loop in [10, 100, 1000] or count > 80:
