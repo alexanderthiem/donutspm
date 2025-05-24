@@ -171,51 +171,63 @@ def raw_api_request(kind, search, sort_by, page=1, depth=5):
     if kind == transactions_link and sort_by != recently_listed:
         print("transactions dont support other sorts than recently_listed")
 
-    res = {}
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Accept": "application/json",
-        "Content-Type": "application/json"}
-    payload = {
-        "search": search,
-        "sort": sort_by,
-    }
-    time_before_request = time.time()*1000
-    response = requests.get(api_url + kind + str(page),
-                            headers=headers, json=payload)
-    time_after_request = time.time()*1000
+    try:
+        res = {}
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+            "Content-Type": "application/json"}
+        payload = {
+            "search": search,
+            "sort": sort_by,
+        }
+        time_before_request = time.time()*1000
+        response = requests.get(api_url + kind + str(page),
+                                headers=headers, json=payload, timeout=3)
+        time_after_request = time.time()*1000
 
-    res["status_code"] = response.status_code
-    res["last_page"] = False
+        res["status_code"] = response.status_code
+        res["last_page"] = False
 
-    if response.status_code == 200:
-        data = response.json()
-        data = data["result"]
-        if data[-1] is None:
-            res["last_page"] = True
-        data = list(filter(lambda x: x is not None, data))
+        if response.status_code == 200:
+            data = response.json()
+            data = data["result"]
+            if data[-1] is None:
+                res["last_page"] = True
+            data = list(filter(lambda x: x is not None, data))
 
-        for d in data:
-            d["request_id"] = raw_api_request.request_id
-            if kind == offers_link:
-                d["ends_at_min"] = d["time_left"] + time_before_request
-                d["ends_at_max"] = d["time_left"] + time_after_request
-        # print("Raw delta: ", time_after_request-time_before_request)
-        res["data"] = data
-        return res
-    else:
-        if response.status_code == 429:  # Too Many Requests
+            for d in data:
+                d["request_id"] = raw_api_request.request_id
+                if kind == offers_link:
+                    d["ends_at_min"] = d["time_left"] + time_before_request
+                    d["ends_at_max"] = d["time_left"] + time_after_request
+            # print("Raw delta: ", time_after_request-time_before_request)
+            res["data"] = data
+            return res
+        else:
+            if response.status_code == 429:  # Too Many Requests
+                print(
+                    f"Rate limit exceeded, sleeping for {2**(5-depth)} intervalls {2**(5-depth)*60/250} seconds")
+                # Sleep for 2**(5-depth) intervals
+                time.sleep(2 * 60 * (1/250) * (2**(5-depth)))
+
+            if depth > 0:
+                return raw_api_request(kind, search, sort_by, page, depth-1)
             print(
-                f"Rate limit exceeded, sleeping for {2**(5-depth)} intervalls {2**(5-depth)*60/250} seconds")
-            # Sleep for 2**(5-depth) intervals
-            time.sleep(2 * 60 * (1/250) * (2**(5-depth)))
-
+                f"Requested {kind} for {search} with sort {sort_by} and page {page}")
+            print(f"Error: {response.status_code} - {response.text}")
+            return res
+    except requests.Timeout as e:
+        print(f"Request timed out: {e}")
         if depth > 0:
             return raw_api_request(kind, search, sort_by, page, depth-1)
-        print(
-            f"Requested {kind} for {search} with sort {sort_by} and page {page}")
-        print(f"Error: {response.status_code} - {response.text}")
-        return res
+        return {"status_code": 408, "data": [], "last_page": False}
+
+    except requests.RequestException as e:
+        print(f"Request error: {e}")
+        if depth > 0:
+            return raw_api_request(kind, search, sort_by, page, depth-1)
+        return {"status_code": 500, "data": [], "last_page": False}
 
 
 def apply_filter_now(search, data):
