@@ -2,7 +2,7 @@ import time
 import api_wrapper
 import sqlite3
 import json
-conn = sqlite3.connect("all_transactions.db")
+conn = sqlite3.connect("all_transactions.db", timeout=5)
 cur = conn.cursor()
 
 

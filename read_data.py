@@ -3,7 +3,8 @@ import sqlite3
 import json
 
 # Connect to your SQLite database
-conn = sqlite3.connect("all_transactions.db")  # Change to your .db filename
+# Change to your .db filename
+conn = sqlite3.connect("all_transactions.db", timeout=5)
 cur = conn.cursor()
 
 
@@ -23,11 +24,21 @@ def format_price(price):
 
 
 def print_table_sizes():
+    print(sqlite3.sqlite_version)
     for table_name in ["seller", "transactions", "item_map", "offers"]:
 
         cur.execute(f"SELECT COUNT(*) FROM {table_name}")
         row_count = cur.fetchone()[0]
         print(table_name, row_count)
+        cur.execute(
+            f"SELECT SUM(pgsize) FROM pragma_page_count('{table_name}')")
+        page_size = cur.fetchone()[0]
+        print(f"  Page Size: {page_size} bytes")
+        cur.execute(
+            f"SELECT SUM(length(name)) FROM pragma_table_info('{table_name}')")
+        column_size = cur.fetchone()[0]
+        print(f"  Column Size: {column_size} bytes")
+        print(f"  Total Size: {page_size + column_size} bytes")
 
         cur.execute(f"PRAGMA table_info({table_name})")
         columns = cur.fetchall()  # Each row: (cid, name, type, notnull, dflt_value, pk)
