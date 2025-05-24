@@ -5,6 +5,7 @@ import json
 # Connect to your SQLite database
 # Change to your .db filename
 conn = sqlite3.connect("all_transactions.db", timeout=5)
+conn.execute("PRAGMA journal_mode=WAL;")
 cur = conn.cursor()
 
 

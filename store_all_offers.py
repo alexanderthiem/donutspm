@@ -3,6 +3,8 @@ import api_wrapper
 import sqlite3
 import json
 conn = sqlite3.connect("all_transactions.db", timeout=5)
+
+conn.execute("PRAGMA journal_mode=WAL;")
 cur = conn.cursor()
 
 
