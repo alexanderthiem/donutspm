@@ -51,7 +51,7 @@ while True:
     if count == 0:
         time.sleep(1/250 * 10)
         continue
-    if loop < 10 or loop % 10000 == 0 or loop in [10, 100, 1000] or count > 40:
+    if loop < 10 or loop % 10000 == 0 or loop in [10, 100, 1000] or count > 80:
         print(
             f"Processing {count} new transactions...at {now:.4f} seconds, fetching took {time.time()-now:.4f} seconds")
     for i in range(count):
@@ -123,7 +123,7 @@ while True:
         ''', (data["price"], data["unixMillisDateSold"], uuid_to_id[data["seller"]["uuid"]], item_key_to_id[item_keys[i]]))
     conn.commit()
 
-    if loop < 10 or loop % 10000 == 0 or loop in [10, 100, 1000] or count > 40:
+    if loop < 10 or loop % 10000 == 0 or loop in [10, 100, 1000] or count > 80:
         print(
             f"Loop {loop} completed in {time.time()-now:.4f} seconds, inserted {count} transactions.")
 

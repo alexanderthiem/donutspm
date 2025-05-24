@@ -105,7 +105,9 @@ async def async_raw_api_request(session, kind, search, sort_by, page=1, depth=5)
                         d["ends_at_min"] = d["time_left"] + time_before_request
                         d["ends_at_max"] = d["time_left"] + time_after_request
                 res["data"] = data
-                print(time_after_request - time_before_request)
+                raw_time = time_after_request - time_before_request
+                if raw_time > 900:
+                    print(raw_time)
                 return res
             else:
                 if response.status == 429:
@@ -137,7 +139,7 @@ async def scheduled_fetch(kind, search, sort_by, interval=0.5):
         async def fetch_and_store(session, kind, search, sort_by):
             result = await async_raw_api_request(session, kind, search, sort_by)
             if "data" in result:
-                get_offers_buffer(kind, search, sort_by).extend(result["data"])
+                get_offers_buffer(kind, search, sort_by).append(result["data"])
 
         await fetch_loop()
 
@@ -153,8 +155,8 @@ def start_scheduled_fetch_in_background(kind, search, sort_by, interval=0.5):
 def simulate_api_call(kind, search, sort_by):
     buffer = get_offers_buffer(kind, search, sort_by)
     new_offers = []
-    while buffer:
-        new_offers.append(buffer.popleft())
+    if buffer:
+        new_offers.extend(buffer.popleft())
     return new_offers
 
 
@@ -308,9 +310,12 @@ def update_transaction_cache():
             break
     all_data = list(
         filter(lambda x: x["unixMillisDateSold"] > transactions_last_fetched, all_data))
-
-    new_len = len(all_data)
     all_data.sort(key=lambda x: x["unixMillisDateSold"], reverse=True)
+    # make all data unique
+    seen = set()
+    all_data = [x for x in all_data if not (x["item"]["id"], x["seller"]["uuid"], x["price"], x["unixMillisDateSold"]) in seen and not seen.add(
+        (x["item"]["id"], x["seller"]["uuid"], x["price"], x["unixMillisDateSold"]))]
+    new_len = len(all_data)
     all_data.extend(
         update_transaction_cache.transaction_cache[:10000-len(all_data)])
     update_transaction_cache.transaction_cache = all_data
